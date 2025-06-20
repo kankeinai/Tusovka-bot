@@ -19,6 +19,7 @@ class TestRepository:
                     finished_at TIMESTAMP WITH TIME ZONE,
                     finished BOOLEAN DEFAULT FALSE,
                     response TEXT DEFAULT NULL,
+                    grade INTEGER DEFAULT 0,
                     FOREIGN KEY (user_id) REFERENCES tg_user(id)
                 )
             """)

@@ -30,7 +30,15 @@ languages = {
 }
 
 system_message = """
-You are an assistant for the Tusovka language school, who helps to prepare for YKI Finnish. You always give concise responses to the questions of the student. You provide feedback in the preferred language of the student."""
+You are a strict but supportive assistant for Tusovka language school, helping students prepare for the YKI Finnish exam. You always provide clear, concise, and constructive feedback in the student's preferred language. Your evaluations follow YKI criteria closely and highlight exactly what needs to be improved. Be firm, fair, and focused on progress.
+YKI score 0 means the response is off-topic, empty, or completely fails to show any usable language skills.
+YKI score 1 means the response shows very limited language ability with major errors and unclear communication.
+YKI score 2 means the response shows some basic language skills but with frequent errors and limited ability to express clear ideas.s
+YKI score 3 means the response is understandable and mostly on-topic, but contains noticeable errors and limited vocabulary.
+YKI score 4 means the response is clear and mostly correct, with occasional mistakes but sufficient language skills for everyday situations
+YKI score 5 means the response is fluent, well-structured, and mostly accurate, with only minor errors that do not affect understanding.
+YKI score 6 means the response is very fluent, precise, and nearly error-free, demonstrating excellent control of language and style.
+"""
 
 
 tests = {
@@ -68,7 +76,7 @@ writing_parts_names ={
 
 # Test time limits in minutes
 test_time_limits = {
-    'writing_part_1': 15,  
+    'writing_part_1': 0.5,  
     'writing_part_2': 20,  
     'writing_part_3': 25,     
 }
@@ -125,6 +133,7 @@ TRANSLATIONS = {
         'warning_5min': '⚠️ **Внимание!**\n\nДо окончания теста осталось 5 минут!',
         'warning_1min': '🚨 **Срочно!**\n\nДо окончания теста осталось 1 минута!',
         'warning_generic': '⏰ До окончания теста осталось {minutes} минут!',
+        'grade_title' : '📊 **Оценка:**\n\n{grade}',
     },
     'en': {
         'welcome': '👋 Hi! Welcome to the YKI preparation bot!\n\n📝 Use /test to start preparing\n⚙️ Use /menu for settings',
@@ -172,6 +181,7 @@ TRANSLATIONS = {
         'warning_5min': '⚠️ **Warning!**\n\n5 minutes left until test ends!',
         'warning_1min': '🚨 **Urgent!**\n\n1 minute left until test ends!',
         'warning_generic': '⏰ {minutes} minutes left until test ends!',
+        'grade_title' : '📊 **Grade:**\n\n{grade}',
     },
     'fi': {
         'welcome': '👋 Hei! Tervetuloa YKI-valmennusbottiin!\n\n📝 Käytä /test aloittaaksesi valmennuksen\n⚙️ Käytä /menu asetusten muuttamiseen',
@@ -219,6 +229,7 @@ TRANSLATIONS = {
         'warning_5min': '⚠️ **Varoitus!**\n\n5 minuuttia jäljellä testin loppuun!',
         'warning_1min': '🚨 **Kiireellinen!**\n\n1 minuutti jäljellä testin loppuun!',
         'warning_generic': '⏰ {minutes} minuuttia jäljellä testin loppuun!',
+        'grade_title' : '📊 **Arvosana:**\n\n{grade}',
     },
     'kz': {
         'welcome': '👋 Сәлем! YKI дайындық ботына қош келдіңіз!\n\n📝 /test арқылы дайындықты бастаңыз\n⚙️ /menu арқылы параметрлерді өзгертіңіз',
@@ -266,6 +277,7 @@ TRANSLATIONS = {
         'warning_5min': '⚠️ **Назар аударыңыз!**\n\nСынақтың аяқталуына 5 минут қалды!',
         'warning_1min': '🚨 **Шұғыл!**\n\nСынақтың аяқталуына 1 минут қалды!',
         'warning_generic': '⏰ Сынақтың аяқталуына {minutes} минут қалды!',
+        'grade_title' : '📊 **Баға:**\n\n{grade}',
     }
 }
 

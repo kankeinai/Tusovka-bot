@@ -393,19 +393,32 @@ async def auto_complete_test(test_id: int, user_id: int, delay: float, bot: Bot)
         ])
         
         if last_response:
+            prompt = (
+                f"I have this text: \"{test['response']}\". "
+                f"The writing task is: {writing_parts_names[test['test_type']]}. "
+                f"The topic is: \"{test['topic']}\". "
+                "Give only a single numerical grade (0–6) according to the official YKI grading scale. "
+                "Do not explain, comment, or add any extra text. Be strict and follow all YKI criteria. "
+                "If the text is off-topic, give a score of 0."
+            )
+
+            get_numerical_grade = await openai_service.get_numeric_grade(user['language'], prompt, test['test_level'], test['topic'])
             # User provided a response, finish the test with it
             await test_repo.db.execute("""
                 UPDATE tests 
                 SET finished = TRUE, 
-                    finished_at = NOW()
+                    finished_at = NOW(),
+                    grade = $2
                 WHERE id = $1
-            """, test_id)
+            """, test_id, get_numerical_grade)
             
             await bot.send_message(
                 user_id, 
                 get_text('time_expired', user['language']), 
                 reply_markup=keyboard
             )
+    
+           
         else:
             # No response provided, mark as auto-finished
             await test_repo.db.execute("""
@@ -456,8 +469,16 @@ async def callback_grade_handler(callback: CallbackQuery, state: FSMContext) -> 
             return
             
         user = await user_repo.get_user(callback.from_user.id)
-        prompt = f" Grade this response against criteria on {test['test_level']} level yki, this writing task is {writing_parts_names[test['test_type']]}, topic was \"{test['topic']}\", provide numerical grade according to YKI grading scale: {test['response']}. Provide response in {user['language']} language."
-        await callback.message.answer(get_text('generating_grade', user['language']))
+        prompt = (
+            f"Evaluate this response for the YKI writing exam:\n"
+            f"Text: \"{test['response']}\"\n"
+            f"Level: {test['test_level']}, Task: {writing_parts_names[test['test_type']]}, Topic: \"{test['topic']}\".\n"
+            "Give a numerical grade (0–6) and explain the score based on YKI criteria: content, structure, vocabulary, grammar, and task completion. "
+            f"Justify each part with specific examples from the text. Be strict and accurate. Respond in {user['language']}."
+            "Limit your response to 200 words."        
+        )
+
+        # Use the new numeric grade method
         grade = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
 
         await callback.message.answer(get_text('grade_title', user['language'], grade=grade), parse_mode="Markdown")
@@ -481,8 +502,17 @@ async def callback_feedback_handler(callback: CallbackQuery, state: FSMContext) 
             return
             
         user = await user_repo.get_user(callback.from_user.id)
-        prompt = f"How can I improve? Analyze this response and provide specific improvement suggestions for {test['test_level']} level yki, {test['test_type']}, topic was \"{test['topic']}\": {test['response']}. Provide response in {user['language']} language."
-        
+        logging.info(f"test: {test['response']}")
+        prompt = (
+            f"Analyze the following YKI writing response:\n"
+            f"Text: \"{test['response']}\"\n"
+            f"Level: {test['test_level']}, Task: {writing_parts_names[test['test_type']]}, Topic: \"{test['topic']}\".\n"
+            "Comment on grammar, vocabulary, sentence structure, and content relevance. "
+            "Point out strong parts and give examples of errors or weak areas. "
+            f"Be detailed and refer to specific parts of the text. Respond in {user['language']}."
+            "Limit your response to 200 words."
+        )
+ 
         await callback.message.answer(get_text('generating_feedback', user['language']))
 
         feedback = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
@@ -509,8 +539,15 @@ async def callback_advice_handler(callback: CallbackQuery, state: FSMContext) ->
             
         user = await user_repo.get_user(callback.from_user.id)
         logging.info(f"test {test}")
-        prompt = f"What do I need to practice? Based on this response, what specific areas should I focus on for {test['test_level']} level yki, {test['test_type']}, topic was \"{test['topic']}\": {test['response']}. Provide response in {user['language']} language."
-
+        prompt = (
+            f"Based on this YKI writing response:\n"
+            f"Text: \"{test['response']}\"\n"
+            f"Level: {test['test_level']}, Task: {writing_parts_names[test['test_type']]}, Topic: \"{test['topic']}\".\n"
+            "What should the student focus on to improve their score? "
+            "Suggest specific grammar rules, vocabulary areas, or writing skills to train. "
+            f"Mention concrete exercises or resources. Use examples from the text to guide your suggestions. Respond in {user['language']}."
+            "Limit your response to 200 words."
+        )
         await callback.message.answer(get_text('generating_advice', user['language']))
         advice = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
 
@@ -605,6 +642,10 @@ async def main() -> None:
     finally:
         await runner.cleanup()
 
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(main())
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
