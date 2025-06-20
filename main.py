@@ -5,7 +5,6 @@ import sys
 import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Any, Union
-import pytz
 from aiogram import Bot, Dispatcher, html, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
