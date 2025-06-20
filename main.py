@@ -3,7 +3,7 @@ import logging
 import secrets
 import sys
 import os
-from settings import get_test_time_limit
+from settings import get_test_time_limit, get_text, writing_parts_names
 from datetime import datetime, timedelta
 from settings import writing_parts_names
 from typing import Dict, List, Tuple, Any, Union
@@ -59,38 +59,19 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
     """
     This handler receives messages with `/start` command
     """
-    # Get user from database
     user = await user_repo.get_user(message.from_user.id)
-
-    if user is None:
-        # User doesn't exist, create new user
-        await user_repo.save_user(
-            message.from_user.id,
-            message.from_user.username,
-            message.from_user.full_name
-        )
-        user = await user_repo.get_user(message.from_user.id)
+    
+    if user and user['invited']:
+        # User is already registered and confirmed
+        await message.answer(get_text('welcome', user['language']))
+    elif user and not user['invited']:
+        # User is registered but not confirmed
+        await message.answer(get_text('confirm_registration', user['language']))
+        await state.set_state(RegistrationStates.waiting_for_name)
     else:
-        # User exists, update username if changed
-        if user['username'] != message.from_user.username:
-            await user_repo.update_user(message.from_user.id, username=message.from_user.username)
-
-    if str(message.from_user.id) in settings.ADMINS and not await user_repo.is_admin(message.from_user.id):
-        await user_repo.set_admin(message.from_user.id)
-
-    # Save user's language to state
-    await state.update_data(language=user['language'])
-
-    welcome_message = (
-        f"👋 Привет!{html.bold(message.from_user.full_name)}!\n\n"
-        f"Я бот который помогает готовиться к YKI.\n\n"
-    )
-
-    await message.answer(welcome_message)
-
-    # Check if user is invited
-    if user['invited'] == False:
-        await message.answer("Пожалуйста, подтвердите свою учетную запись, чтобы получить доступ к боту! /confirm")
+        # New user, start registration
+        await message.answer(get_text('invite_code_prompt', 'ru'))
+        await state.set_state(RegistrationStates.waiting_for_invite_code)
 
 @dp.message(Command("confirm"))
 async def command_confirm_handler(message: Message, state: FSMContext) -> None:
@@ -98,23 +79,19 @@ async def command_confirm_handler(message: Message, state: FSMContext) -> None:
     This handler receives messages with `/confirm` command
     """
     user = await user_repo.get_user(message.from_user.id)
-    if user['invited'] == True:
-        await message.answer("Вы уже подтвердили свою учетную запись!")
+    
+    if user and not user['invited']:
+        await user_repo.update_user(message.from_user.id, confirmed=True)
+        await message.answer(get_text('registration_success', user['language']))
+        await command_menu_handler(message)
     else:
-
-        await message.answer("Введите код приглашения для подтверждения учетной записи")
-        await state.set_state(RegistrationStates.waiting_for_invite_code)
+        await message.answer(get_text('not_registered', user['language'] if user else 'ru'))
 
 @dp.message(RegistrationStates.waiting_for_invite_code)
 async def handle_invite_code_input(message: Message, state: FSMContext) -> None:
     """
-    Handle invite code input for registration
+    Handle invite code input during registration
     """
-    if message.text == "/cancel":
-        await message.answer("Отмена регистрации.")
-        await state.clear()
-        return
-    
     invite_code = message.text.strip()
     
     # Check if invite code is valid
@@ -126,43 +103,74 @@ async def handle_invite_code_input(message: Message, state: FSMContext) -> None:
             invited=True,
             invited_by=valid_invite['created_by']
         )
-        await message.answer("Теперь вы можете использовать бота!")
+        await message.answer(get_text('registration_success', 'ru'))
         await state.clear()
     else:
-        await message.answer("❌ Неверный код приглашения или код уже использован. Попробуйте еще раз.")
+        await message.answer(get_text('invalid_invite', 'ru'))
 
 @dp.message(Command("menu"))
 async def command_menu_handler(message: Message) -> None:
     """
     This handler receives messages with `/menu` command
     """
-    await message.answer("Выберите действие:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Change name", callback_data="change_name")],
-        [InlineKeyboardButton(text="Change language", callback_data="change_language")],
-    ]))
+    user = await user_repo.get_user(message.from_user.id)
+    
+    if not user or not user['invited']:
+        await message.answer(get_text('not_registered', user['language'] if user else 'ru'))
+        return
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text('change_name', user['language']), callback_data="change_name")],
+        [InlineKeyboardButton(text=get_text('change_language', user['language']), callback_data="change_language")],
+        [InlineKeyboardButton(text=get_text('change_level', user['language']), callback_data="change_level")],
+    ])
+    
+    await message.answer(get_text('menu_title', user['language']), reply_markup=keyboard)
+
 @dp.callback_query(F.data == "change_language")
 async def callback_change_language_handler(callback: CallbackQuery, state: FSMContext) -> None:
     """
     This handler receives callback queries with "change_language" data
     """
+    user = await user_repo.get_user(callback.from_user.id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="ru", callback_data="language_ru")],
-        [InlineKeyboardButton(text="en", callback_data="language_en")],
-        [InlineKeyboardButton(text="fi", callback_data="language_fi")],
-        [InlineKeyboardButton(text="kz", callback_data="language_kz")],
-        [InlineKeyboardButton(text="back", callback_data="back")],
+        [InlineKeyboardButton(text="Русский", callback_data="language_ru")],
+        [InlineKeyboardButton(text="English", callback_data="language_en")],
+        [InlineKeyboardButton(text="Suomi", callback_data="language_fi")],
+        [InlineKeyboardButton(text="Қазақ", callback_data="language_kz")],
+        [InlineKeyboardButton(text=get_text('back', user['language']), callback_data="back")],
     ])
-    await callback.message.edit_text("Выберите язык:", reply_markup=keyboard)
+    await callback.message.edit_text(get_text('choose_language', user['language']), reply_markup=keyboard)
+
+@dp.callback_query(F.data == "change_level")
+async def callback_change_level_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    This handler receives callback queries with "change_level" data
+    """
+    user = await user_repo.get_user(callback.from_user.id)
+    await callback.message.edit_text(get_text('choose_level', user['language']), reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Basic", callback_data="level_basic")],
+        [InlineKeyboardButton(text="Intermediate", callback_data="level_intermediate")],
+        [InlineKeyboardButton(text="Advanced", callback_data="level_advanced")],
+        [InlineKeyboardButton(text=get_text('back', user['language']), callback_data="back")],
+    ]))
+
+@dp.callback_query(F.data.startswith("level_"))
+async def callback_level_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    This handler receives callback queries with "level_" data
+    """
+    level = callback.data.split("_")[1]
+    user = await user_repo.get_user(callback.from_user.id)
+    await user_repo.update_user(callback.from_user.id, level=level)
+    await callback.message.edit_text(get_text('level_changed', user['language'], level=level))
 
 @dp.callback_query(F.data == "back")
 async def callback_back_handler(callback: CallbackQuery, state: FSMContext) -> None:
     """
     This handler receives callback queries with "back" data
     """
-    await callback.message.edit_text("Выберите действие:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Change name", callback_data="change_name")],
-        [InlineKeyboardButton(text="Change language", callback_data="change_language")],
-    ]))
+    await command_menu_handler(callback.message)
 
 @dp.callback_query(F.data.startswith("language_"))
 async def callback_language_handler(callback: CallbackQuery, state: FSMContext) -> None:
@@ -175,7 +183,7 @@ async def callback_language_handler(callback: CallbackQuery, state: FSMContext) 
     # Update the language in user's state
     await state.update_data(language=language)
     
-    await callback.message.edit_text("Язык успешно изменен на " + language + "!")
+    await callback.message.edit_text(get_text('language_updated', language))
 
 @dp.callback_query(F.data == "change_name")
 async def callback_change_name_handler(callback: CallbackQuery, state: FSMContext) -> None:
@@ -183,86 +191,70 @@ async def callback_change_name_handler(callback: CallbackQuery, state: FSMContex
     This handler receives callback queries with "change_name" data
     """
     user = await user_repo.get_user(callback.from_user.id)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="back", callback_data="back")],
-    ])
-    await callback.message.edit_text("Ваше текущее имя: " + user['name'] + "\nВведите новое имя. /cancel для отмены", reply_markup=keyboard)
+    await callback.message.edit_text(get_text('name_prompt', user['language']))
     await state.set_state(RegistrationStates.waiting_for_name)
 
 @dp.message(RegistrationStates.waiting_for_name)
 async def handle_name_input(message: Message, state: FSMContext) -> None:
     """
-    Handle the name input for registration
+    Handle name input during registration or name change
     """
-    if message.text == "/cancel":
-        await message.answer("Отмена изменения имени.")
-        await state.clear()
-        return
+    user = await user_repo.get_user(message.from_user.id)
+    name = message.text.strip()
     
-    await user_repo.update_user(message.from_user.id, name=message.text)
-    await message.answer("Имя успешно изменено!")
-    await state.clear()
+    if user and user['invited']:
+        # Changing name for existing user
+        await user_repo.update_user(message.from_user.id, name=name)
+        await message.answer(get_text('name_updated', user['language']))
+        await state.clear()
+    else:
+        # New user registration
+        await user_repo.update_user(message.from_user.id, name=name)
+        await message.answer(get_text('confirm_registration', 'ru'))
+        await state.clear()
 
 @dp.message(Command("code"))
 async def command_code_handler(message: Message, state: FSMContext) -> None:
     """
-    This handler receives messages with `/invite` command
+    This handler receives messages with `/code` command
     """
-    await message.answer("Сколько раз можно использовать код? (введите положительное число)")
+    await message.answer("Enter number of uses for the invite code:")
     await state.set_state(InviteCodeStates.waiting_for_uses)
 
 @dp.message(InviteCodeStates.waiting_for_uses)
 async def handle_uses_input(message: Message, state: FSMContext) -> None:
     """
-    Handle the number of uses input for invite code
+    Handle uses input for invite code creation
     """
-    if message.text == "/cancel":
-        await message.answer("Отмена создания кода приглашения.")
-        await state.clear()
-        return
     try:
-        uses = int(message.text)
-        if uses <= 0:
-            await message.answer("Пожалуйста, введите положительное число больше 0.")
-            return
-        
-        # Generate a shorter, more copy-friendly code (8 characters)
-        code = secrets.token_hex(4).upper()
-        
-        # Create the invite code in database
-        success = await invite_repo.create_invite(
-            code=code,
-            created_by=message.from_user.id,
-            max_uses=uses
-        )
-        
-        if success:
-            # Send the main message
-            await message.answer(
-                f"✅ Код приглашения создан!\n\n"
-                f"🔄 Лимит использования: {uses} раз\n\n"
-            )
-            # Send the copyable code as a separate message
-            await message.answer(
-                f"{code}",
-            )
-        else:
-            await message.answer("❌ Ошибка при создании кода. Попробуйте еще раз.")
-        
+        uses = int(message.text.strip())
+        invite_code = await invite_repo.create_invite(message.from_user.id, uses)
+        await message.answer(f"Invite code created: {invite_code}")
         await state.clear()
-        
     except ValueError:
-        await message.answer("Пожалуйста, введите корректное положительное число.")
+        await message.answer("Please enter a valid number.")
 
 @dp.message(Command("test"))
-async def command_test_handler(message: Message) -> None:
+async def command_test_handler(message: Message, state: FSMContext) -> None:
     """
     This handler receives messages with `/test` command
     """
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=writing_parts_names[part], callback_data=f"writing_part_{part}") for part in writing_parts_names]
-    ])
-    await message.answer("Choose a part to write:", reply_markup=keyboard)
+    user = await user_repo.get_user(message.from_user.id)
+    
+    if not user or not user['invited']:
+        await message.answer(get_text('not_registered', user['language'] if user else 'ru'))
+        return
+    
+    if await state.get_state() == TestStates.waiting_for_response:
+        await message.answer(get_text('already_in_test', user['language']))
+        return
+    
+    keyboard_buttons = []
+    for part in writing_parts_names:
+        keyboard_buttons.append([InlineKeyboardButton(text=writing_parts_names[part], callback_data=part)])
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    await message.answer(get_text('choose_part', user['language']), reply_markup=keyboard)
 
 @dp.callback_query(F.data.startswith("writing_part_"))
 async def callback_writing_part_1_handler(callback: CallbackQuery, state: FSMContext) -> None:
@@ -270,10 +262,11 @@ async def callback_writing_part_1_handler(callback: CallbackQuery, state: FSMCon
     This handler receives callback queries with "writing_part_1" data
     """
     test_type = callback.data
+    logging.info(f"test_type: {test_type}")
     user = await user_repo.get_user(callback.from_user.id)
     
     # Show loading message
-    await callback.message.edit_text(f"🔄 Генерирую тему для {writing_parts_names[test_type]}...")
+    await callback.message.edit_text(get_text('generating_topic', user['language'], topic=writing_parts_names[test_type]))
     
     try:
         # Get test topic from OpenAI
@@ -295,20 +288,16 @@ async def callback_writing_part_1_handler(callback: CallbackQuery, state: FSMCon
             
             # Send the topic and instructions
             await callback.message.edit_text(
-                f"📝 **Epämuodollinen viesti - YKI Testti**\n\n{topic}\n\n",
+                get_text('test_title', user['language'], title=writing_parts_names[test_type], topic=topic),
                 parse_mode="Markdown"
             )
-            await callback.message.answer(f"You have {get_test_time_limit(test_type)} minutes to write your response.")
+            await callback.message.answer(get_text('test_time_limit', user['language'], minutes=get_test_time_limit(test_type)))
         else:
-            await callback.message.edit_text(
-                "❌ Ошибка при создании теста. Попробуйте позже."
-            )
+            await callback.message.edit_text(get_text('test_creation_error', user['language']))
         
     except Exception as e:
         logging.error(f"Error generating test topic: {e}")
-        await callback.message.edit_text(
-            "❌ Произошла ошибка при генерации темы. Попробуйте позже."
-        )
+        await callback.message.edit_text(get_text('test_creation_error', user['language']))
 
 async def schedule_test_tasks(test_id: int, user_id: int, test_type: str, bot: Bot):
     """Schedule warning and completion tasks for a specific test."""
@@ -344,22 +333,24 @@ async def schedule_test_tasks(test_id: int, user_id: int, test_type: str, bot: B
     logging.info(f"Scheduled tasks for test {test_id}: 5min warning at {warning_5min_delay}s, 1min warning at {warning_1min_delay}s, completion at {completion_delay}s")
 
 async def send_scheduled_warning(test_id: int, user_id: int, minutes_left: int, delay: float, bot: Bot):
-    """Send a scheduled warning message after the specified delay."""
+    """Send a scheduled warning message to the user."""
     try:
         await asyncio.sleep(delay)
         
         # Check if test is still active
         test = await test_repo.get_test(test_id)
         if not test or test['finished']:
-            logging.info(f"Test {test_id} already finished, skipping {minutes_left}-min warning")
+            logging.info(f"Test {test_id} already finished, skipping {minutes_left}-minute warning")
             return
         
+        user = await user_repo.get_user(user_id)
+        
         warning_messages = {
-            5: "⚠️ Внимание! До окончания теста осталось 5 минут!",
-            1: "🚨 Срочно! До окончания теста осталось 1 минута!"
+            5: get_text('warning_5min', user['language']),
+            1: get_text('warning_1min', user['language'])
         }
         
-        message = warning_messages.get(minutes_left, f"⏰ До окончания теста осталось {minutes_left} минут!")
+        message = warning_messages.get(minutes_left, get_text('warning_generic', user['language'], minutes=minutes_left))
         
         await bot.send_message(user_id, message)
         logging.info(f"Sent scheduled {minutes_left}-minute warning to user {user_id} for test {test_id}")
@@ -394,13 +385,15 @@ async def auto_complete_test(test_id: int, user_id: int, delay: float, bot: Bot)
             logging.info(f"Test {test_id} already finished, skipping auto-completion")
             return
         
+        user = await user_repo.get_user(user_id)
+        
         # Get the last response from the database
         last_response = test.get('response')
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="What is my score?", callback_data=f"grade_{test_id}")],
-            [InlineKeyboardButton(text="How can I improve?", callback_data=f"feedback_{test_id}")],
-            [InlineKeyboardButton(text="What do I need to practice?", callback_data=f"advice_{test_id}")],
+            [InlineKeyboardButton(text=get_text('what_is_my_score', user['language']), callback_data=f"grade_{test_id}")],
+            [InlineKeyboardButton(text=get_text('how_can_i_improve', user['language']), callback_data=f"feedback_{test_id}")],
+            [InlineKeyboardButton(text=get_text('what_do_i_need_to_practice', user['language']), callback_data=f"advice_{test_id}")],
         ])
         
         if last_response:
@@ -414,7 +407,7 @@ async def auto_complete_test(test_id: int, user_id: int, delay: float, bot: Bot)
             
             await bot.send_message(
                 user_id, 
-                f"⏰ Время теста истекло!", 
+                get_text('time_expired', user['language']), 
                 reply_markup=keyboard
             )
         else:
@@ -428,7 +421,7 @@ async def auto_complete_test(test_id: int, user_id: int, delay: float, bot: Bot)
             """, test_id)
             
             # Send completion message
-            await bot.send_message(user_id, "⏰ Время теста истекло! Ответ не был предоставлен.")
+            await bot.send_message(user_id, get_text('no_response_provided', user['language']))
         
         # Clear user's state using dispatcher
         await clear_user_state_via_dispatcher(user_id, bot)
@@ -462,18 +455,20 @@ async def callback_grade_handler(callback: CallbackQuery, state: FSMContext) -> 
         test = await test_repo.get_test(test_id)
         
         if not test:
-            await callback.message.edit_text("❌ Тест не найден.")
+            user = await user_repo.get_user(callback.from_user.id)
+            await callback.message.edit_text(get_text('test_not_found_error', user['language']))
             return
             
         user = await user_repo.get_user(callback.from_user.id)
         prompt = f"Provide response in {user['language']} language. Grade this response against criteria on {test['test_level']} level yki, this writing task is {writing_parts_names[test['test_type']]}, topic was \"{test['topic']}\", provide numerical grade according to YKI grading scale: {test['response']}."
-        await callback.message.answer("🔄 Генерирую оценку...")
+        await callback.message.answer(get_text('generating_grade', user['language']))
         grade = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
 
-        await callback.message.answer(f"📊 Оценка: {grade}")
+        await callback.message.answer(get_text('grade_title', user['language'], grade=grade), parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Error in grade handler: {e}")
-        await callback.message.edit_text("❌ Ошибка при генерации оценки. Попробуйте позже.")
+        user = await user_repo.get_user(callback.from_user.id)
+        await callback.message.edit_text(get_text('grade_error', user['language']))
 
 @dp.callback_query(F.data.startswith("feedback_"))
 async def callback_feedback_handler(callback: CallbackQuery, state: FSMContext) -> None:
@@ -485,20 +480,22 @@ async def callback_feedback_handler(callback: CallbackQuery, state: FSMContext) 
         test = await test_repo.get_test(test_id)
         
         if not test:
-            await callback.message.edit_text("❌ Тест не найден.")
+            user = await user_repo.get_user(callback.from_user.id)
+            await callback.message.edit_text(get_text('test_not_found_error', user['language']))
             return
             
         user = await user_repo.get_user(callback.from_user.id)
         prompt = f"How can I improve? Analyze this response and provide specific improvement suggestions for {test['test_level']} level yki, {test['test_type']}, topic was \"{test['topic']}\": {test['response']}. Provide response in {user['language']} language."
         
-        await callback.message.answer("🔄 Генерирую рекомендации...")
+        await callback.message.answer(get_text('generating_feedback', user['language']))
 
         feedback = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
 
-        await callback.message.answer(f"💡 Рекомендации: {feedback}")
+        await callback.message.answer(get_text('feedback_title', user['language'], feedback=feedback), parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Error in feedback handler: {e}")
-        await callback.message.edit_text("❌ Ошибка при генерации рекомендаций. Попробуйте позже.")
+        user = await user_repo.get_user(callback.from_user.id)
+        await callback.message.edit_text(get_text('feedback_error', user['language']))
 
 @dp.callback_query(F.data.startswith("advice_"))
 async def callback_advice_handler(callback: CallbackQuery, state: FSMContext) -> None:
@@ -510,27 +507,31 @@ async def callback_advice_handler(callback: CallbackQuery, state: FSMContext) ->
         test = await test_repo.get_test(test_id)
         
         if not test:
-            await callback.message.edit_text("❌ Тест не найден.")
+            user = await user_repo.get_user(callback.from_user.id)
+            await callback.message.edit_text(get_text('test_not_found_error', user['language']))
             return
             
         user = await user_repo.get_user(callback.from_user.id)
         logging.info(f"test {test}")
         prompt = f"What do I need to practice? Based on this response, what specific areas should I focus on for {test['test_level']} level yki, {test['test_type']}, topic was \"{test['topic']}\": {test['response']}. Provide response in {user['language']} language."
 
-        await callback.message.answer("🔄 Генерирую советы...")
+        await callback.message.answer(get_text('generating_advice', user['language']))
         advice = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
 
-        await callback.message.answer(f"🎯 Что практиковать: {advice}")
+        await callback.message.answer(get_text('advice_title', user['language'], advice=advice), parse_mode="Markdown")
 
     except Exception as e:
         logging.error(f"Error in advice handler: {e}")
-        await callback.message.edit_text("❌ Ошибка при генерации советов. Попробуйте позже.")
+        user = await user_repo.get_user(callback.from_user.id)
+        await callback.message.edit_text(get_text('advice_error', user['language']))
 
 @dp.message(TestStates.waiting_for_response)
 async def handle_test_response(message: Message, state: FSMContext) -> None:
     """
     Handle user's test response - allows multiple responses
     """
+    user = await user_repo.get_user(message.from_user.id)
+    
     if message.text == "/cancel":
         # Cancel the test and scheduled tasks
         data = await state.get_data()
@@ -540,7 +541,7 @@ async def handle_test_response(message: Message, state: FSMContext) -> None:
             await test_repo.cancel_active_test(message.from_user.id)
             cancel_scheduled_tasks(test_id)
         
-        await message.answer("❌ Тест отменен.")
+        await message.answer(get_text('test_cancelled', user['language']))
         await state.clear()
         return
     
@@ -549,7 +550,7 @@ async def handle_test_response(message: Message, state: FSMContext) -> None:
     test_id = data.get('current_test_id')
     
     if not test_id:
-        await message.answer("❌ Ошибка: тест не найден. Начните заново.")
+        await message.answer(get_text('test_not_found', user['language']))
         await state.clear()
         return
 
@@ -559,14 +560,13 @@ async def handle_test_response(message: Message, state: FSMContext) -> None:
     await test_repo.update_last_response(test_id, message.text)
     
     # Show confirmation but don't finish the test yet
-    await message.answer(
-        "✅ Ответ сохранен! Вы можете отправить новый ответ или дождаться окончания времени."
-    )
+    await message.answer(get_text('response_saved', user['language']))
 
 @dp.message()
 async def handle_unknown_message(message: Message) -> None:
     """Handle unknown messages"""
-    await message.answer("hi!")
+    user = await user_repo.get_user(message.from_user.id)
+    await message.answer(get_text('unknown_message', user['language'] if user else 'ru'))
 
 async def main() -> None:
     global bot_instance, dp_instance
