@@ -13,7 +13,6 @@ from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, 
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from settings import phrases, info_message, help_message
 from random import choice
 import json
 from settings import settings
@@ -64,18 +63,9 @@ async def main() -> None:
     await db.connect(settings.DATABASE_URL_UNPOOLED)
     # Initialize tables
     await user_repo.init(db)
-   
-    periodic_tasks = []
-    
-    # Start periodic tasks and bot polling concurrently
-    try:
-        await asyncio.gather(
-            dp.start_polling(bot),
-            *periodic_tasks
-        )
-    finally:
-        # Close the database connection when the bot is stopped
-        await db.close()
+
+    await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
