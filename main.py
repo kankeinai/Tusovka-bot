@@ -1,28 +1,24 @@
 import asyncio
 import logging
-import secrets
-import sys
-import os
 from settings import get_test_time_limit, get_text, writing_parts_names
 from datetime import datetime, timedelta
-from settings import writing_parts_names
 from typing import Dict, List, Tuple, Any, Union
-from aiogram import Bot, Dispatcher, html, F
+from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters.command import Command
-from aiogram.types import Message, CallbackQuery, FSInputFile, InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from random import choice
-import json
 from settings import settings
 from db import db
 from repository.user import UserRepository
 from repository.invites import InviteRepository
 from repository.test import TestRepository
 from openai_service import openai_service
+import aiohttp
+from aiohttp import web
 
 user_repo = UserRepository()
 invite_repo = InviteRepository()
@@ -460,7 +456,7 @@ async def callback_grade_handler(callback: CallbackQuery, state: FSMContext) -> 
             return
             
         user = await user_repo.get_user(callback.from_user.id)
-        prompt = f"Provide response in {user['language']} language. Grade this response against criteria on {test['test_level']} level yki, this writing task is {writing_parts_names[test['test_type']]}, topic was \"{test['topic']}\", provide numerical grade according to YKI grading scale: {test['response']}."
+        prompt = f" Grade this response against criteria on {test['test_level']} level yki, this writing task is {writing_parts_names[test['test_type']]}, topic was \"{test['topic']}\", provide numerical grade according to YKI grading scale: {test['response']}. Provide response in {user['language']} language."
         await callback.message.answer(get_text('generating_grade', user['language']))
         grade = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
 
@@ -583,9 +579,33 @@ async def main() -> None:
     # Set global dispatcher instance
     dp_instance = dp
 
-    await dp.start_polling(bot_instance)
+    # Create web app for health checks
+    app = web.Application()
+    
+    # Health check endpoint
+    async def health_check(request):
+        return web.Response(text="OK", status=200)
+    
+    app.router.add_get('/health', health_check)
+    app.router.add_get('/', health_check)  # Root endpoint also returns health status
+    
+    # Create runner for web app
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Start web server on port 8080
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    
+    logging.info("Health check server started on port 8080")
+    
+    try:
+        # Start both the bot and keep the web server running
+        await dp.start_polling(bot_instance)
+    finally:
+        await runner.cleanup()
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())

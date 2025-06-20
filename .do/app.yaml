@@ -1,0 +1,31 @@
+name: tusovka-bot
+services:
+- name: bot
+  source_dir: /
+  github:
+    repo: your-username/tusovka-bot
+    branch: main
+  run_command: python main.py
+  environment_slug: python
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  health_check:
+    http_path: /health
+    initial_delay_seconds: 30
+    interval_seconds: 10
+    timeout_seconds: 5
+    success_threshold: 1
+    failure_threshold: 3
+  envs:
+  - key: BOT_TOKEN
+    scope: RUN_AND_BUILD_TIME
+    value: ${BOT_TOKEN}
+  - key: DATABASE_URL_UNPOOLED
+    scope: RUN_AND_BUILD_TIME
+    value: ${DATABASE_URL_UNPOOLED}
+  - key: OPENAI_API_KEY
+    scope: RUN_AND_BUILD_TIME
+    value: ${OPENAI_API_KEY}
+  ports:
+  - http_port: 8080
+    protocol: HTTP 
