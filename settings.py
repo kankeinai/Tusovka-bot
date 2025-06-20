@@ -76,7 +76,7 @@ writing_parts_names ={
 
 # Test time limits in minutes
 test_time_limits = {
-    'writing_part_1': 0.5,  
+    'writing_part_1': 15,  
     'writing_part_2': 20,  
     'writing_part_3': 25,     
 }
