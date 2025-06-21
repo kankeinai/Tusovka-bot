@@ -385,12 +385,6 @@ async def auto_complete_test(test_id: int, user_id: int, delay: float, bot: Bot)
         
         # Get the last response from the database
         last_response = test.get('response')
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=get_text('what_is_my_score', user['language']), callback_data=f"grade_{test_id}")],
-            [InlineKeyboardButton(text=get_text('how_can_i_improve', user['language']), callback_data=f"feedback_{test_id}")],
-            [InlineKeyboardButton(text=get_text('what_do_i_need_to_practice', user['language']), callback_data=f"advice_{test_id}")],
-        ])
         
         if last_response:
             prompt = (
@@ -402,7 +396,48 @@ async def auto_complete_test(test_id: int, user_id: int, delay: float, bot: Bot)
                 "If the text is off-topic, give a score of 0."
             )
 
-            get_numerical_grade = await openai_service.get_numeric_grade(user['language'], prompt, test['test_level'], test['topic'])
+            grade, reason_code = await openai_service.get_numeric_grade(user['language'], prompt, test['test_level'], test['topic'])
+
+            if reason_code:
+                reason_message = get_text(f'grade_reason_{reason_code}', user['language'])
+                grade_zero_message = get_text('grade_zero_message', user['language'], reason=reason_message)
+                await bot.send_message(user_id, grade_zero_message)
+                return
+            else:
+                await bot.send_message(
+                    user_id, 
+                    get_text('grade_title', user['language'], grade=grade), 
+                )
+                feedback_prompt = (
+                        f"YKI examiner give this response a grade {grade}: {test['response']} "
+                        f"Your response should be in {user['language']} language. Students's name is {user['name']}."
+                        "Your response should be according to the following format: "
+                        """Hi [student's name]!
+                            Well done: your text included an opening and closing greeting, the conditional mood, and passive voice in the pluperfect tense—very nice! You also described the situation, explained what had happened, and why you wanted compensation.
+                            First, let’s look at the mistakes:
+                            matkuston (?) - do you mean “matka” (trip)? In that case you should also use the –sta ending, i.e. “matkasta” (write + mistä).
+                            mutta jos - did you mean “mutta kun”?
+                            sapuimme - should be saavuimme.
+                            hytti oli pieni ja ei siisti – say “hytti oli pieni eikä ollut siisti” (“eikä” = “and not” rather than “ja + ei”).
+                            pysyä - do you mean pyytää (to ask)?
+                            reisusta - correct is reissusta.
+                            jos tarvitse - use “jos tarvitsette” or, more politely, “jos tarvitsisitte”.
+                            meillä on ruvia (?) - I’m not sure what you meant here.
+                            Helsingista - correct is Helsingistä.
+                            Topics for review (if the error occurs several times, move it into the “review” section):
+                            1.…
+                            2.… (No more than two items.)
+                            Structures you could improve to raise your level (up to five):
+                            1. …
+                            2. …
+                            3. …
+                            4. …
+                            5. …   """
+                                            )
+                response = await openai_service.get_response(user['language'], feedback_prompt, test['test_level'], test['topic'], tokens=1000)
+                await bot.send_message(user_id, str(response))
+
+            
             # User provided a response, finish the test with it
             await test_repo.db.execute("""
                 UPDATE tests 
@@ -410,14 +445,7 @@ async def auto_complete_test(test_id: int, user_id: int, delay: float, bot: Bot)
                     finished_at = NOW(),
                     grade = $2
                 WHERE id = $1
-            """, test_id, get_numerical_grade)
-            
-            await bot.send_message(
-                user_id, 
-                get_text('time_expired', user['language']), 
-                reply_markup=keyboard
-            )
-    
+            """, test_id, grade)
            
         else:
             # No response provided, mark as auto-finished
@@ -452,111 +480,6 @@ def cancel_scheduled_tasks(test_id: int):
             del scheduled_tasks[key]
     
     logging.info(f"Cancelled scheduled tasks for test {test_id}")
-
-@dp.callback_query(F.data.startswith("grade_"))
-async def callback_grade_handler(callback: CallbackQuery, state: FSMContext) -> None:
-    """
-    This handler receives callback queries with "grade_" data
-    """
-    try:
-        test_id = int(callback.data.split("_")[1])
-        logging.info(f"Grade test {test_id} for user {callback.from_user.id}")
-        test = await test_repo.get_test(test_id)
-        
-        if not test:
-            user = await user_repo.get_user(callback.from_user.id)
-            await callback.message.edit_text(get_text('test_not_found_error', user['language']))
-            return
-            
-        user = await user_repo.get_user(callback.from_user.id)
-        prompt = (
-            f"Evaluate this response for the YKI writing exam:\n"
-            f"Text: \"{test['response']}\"\n"
-            f"Level: {test['test_level']}, Task: {writing_parts_names[test['test_type']]}, Topic: \"{test['topic']}\".\n"
-            "Give a numerical grade (0–6) and explain the score based on YKI criteria: content, structure, vocabulary, grammar, and task completion. "
-            f"Justify each part with specific examples from the text. Be strict and accurate. Respond in {user['language']}."
-            "Limit your response to 200 words."        
-        )
-
-        # Use the new numeric grade method
-        grade = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
-
-        await callback.message.answer(get_text('grade_title', user['language'], grade=grade), parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Error in grade handler: {e}")
-        user = await user_repo.get_user(callback.from_user.id)
-        await callback.message.edit_text(get_text('grade_error', user['language']))
-
-@dp.callback_query(F.data.startswith("feedback_"))
-async def callback_feedback_handler(callback: CallbackQuery, state: FSMContext) -> None:
-    """
-    This handler receives callback queries with "feedback_" data
-    """
-    try:
-        test_id = int(callback.data.split("_")[1])
-        test = await test_repo.get_test(test_id)
-        
-        if not test:
-            user = await user_repo.get_user(callback.from_user.id)
-            await callback.message.edit_text(get_text('test_not_found_error', user['language']))
-            return
-            
-        user = await user_repo.get_user(callback.from_user.id)
-        logging.info(f"test: {test['response']}")
-        prompt = (
-            f"Analyze the following YKI writing response:\n"
-            f"Text: \"{test['response']}\"\n"
-            f"Level: {test['test_level']}, Task: {writing_parts_names[test['test_type']]}, Topic: \"{test['topic']}\".\n"
-            "Comment on grammar, vocabulary, sentence structure, and content relevance. "
-            "Point out strong parts and give examples of errors or weak areas. "
-            f"Be detailed and refer to specific parts of the text. Respond in {user['language']}."
-            "Limit your response to 200 words."
-        )
- 
-        await callback.message.answer(get_text('generating_feedback', user['language']))
-
-        feedback = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
-
-        await callback.message.answer(get_text('feedback_title', user['language'], feedback=feedback), parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Error in feedback handler: {e}")
-        user = await user_repo.get_user(callback.from_user.id)
-        await callback.message.edit_text(get_text('feedback_error', user['language']))
-
-@dp.callback_query(F.data.startswith("advice_"))
-async def callback_advice_handler(callback: CallbackQuery, state: FSMContext) -> None:
-    """
-    This handler receives callback queries with "advice_" data
-    """
-    try:
-        test_id = int(callback.data.split("_")[1])
-        test = await test_repo.get_test(test_id)
-        
-        if not test:
-            user = await user_repo.get_user(callback.from_user.id)
-            await callback.message.edit_text(get_text('test_not_found_error', user['language']))
-            return
-            
-        user = await user_repo.get_user(callback.from_user.id)
-        logging.info(f"test {test}")
-        prompt = (
-            f"Based on this YKI writing response:\n"
-            f"Text: \"{test['response']}\"\n"
-            f"Level: {test['test_level']}, Task: {writing_parts_names[test['test_type']]}, Topic: \"{test['topic']}\".\n"
-            "What should the student focus on to improve their score? "
-            "Suggest specific grammar rules, vocabulary areas, or writing skills to train. "
-            f"Mention concrete exercises or resources. Use examples from the text to guide your suggestions. Respond in {user['language']}."
-            "Limit your response to 200 words."
-        )
-        await callback.message.answer(get_text('generating_advice', user['language']))
-        advice = await openai_service.get_response(user['language'], prompt, test['test_level'], test['topic'])
-
-        await callback.message.answer(get_text('advice_title', user['language'], advice=advice), parse_mode="Markdown")
-
-    except Exception as e:
-        logging.error(f"Error in advice handler: {e}")
-        user = await user_repo.get_user(callback.from_user.id)
-        await callback.message.edit_text(get_text('advice_error', user['language']))
 
 @dp.message(TestStates.waiting_for_response)
 async def handle_test_response(message: Message, state: FSMContext) -> None:
@@ -647,6 +570,3 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    asyncio.run(main())

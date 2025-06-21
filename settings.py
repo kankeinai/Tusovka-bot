@@ -44,7 +44,7 @@ YKI score 6 means the response is very fluent, precise, and nearly error-free, d
 tests = {
     'writing_part_1': """
         Generate me topic for writing part 1 test of Finnish YKI (Epämuodollinen viesti — Неформальное сообщение). 
-        Provide all instructions that are usually present on the test.
+        Provide all instructions that are usually present on the test. Do not include any other text.
         Topic should be in Finnish. 
         Example: write a message to a friend, neighbor, colleague.
         Typical topics: invite, tell about an event, explain a situation.
@@ -108,7 +108,13 @@ TRANSLATIONS = {
         'test_not_found': '❌ Тест не найден\n\nНачните заново',
         'test_cancelled': '❌ Тест отменен',
         'generating_grade': '🔄 Генерирую оценку...',
-        'grade_title': '📊 **Оценка:**\n\n{grade}',
+        'grade_title': '📊 Оценка: {grade}',
+        'grade_reason_not_finnish': 'Текст не на финском языке',
+        'grade_reason_off_topic': 'Текст не соответствует теме',
+        'grade_reason_rejected': 'Текст отклонен',
+        'grade_reason_grade_extraction_failed': 'Не удалось извлечь оценку',
+        'grade_reason_error_occurred': 'Произошла ошибка при оценке',
+        'grade_zero_message': 'Вы получили оценку 0. Причина: {reason}',
         'generating_feedback': '🔄 Генерирую рекомендации...',
         'feedback_title': '💡 **Рекомендации:**\n\n{feedback}',
         'generating_advice': '🔄 Генерирую советы...',
@@ -133,7 +139,7 @@ TRANSLATIONS = {
         'warning_5min': '⚠️ **Внимание!**\n\nДо окончания теста осталось 5 минут!',
         'warning_1min': '🚨 **Срочно!**\n\nДо окончания теста осталось 1 минута!',
         'warning_generic': '⏰ До окончания теста осталось {minutes} минут!',
-        'grade_title' : '📊 **Оценка:**\n\n{grade}',
+        'grade_title' : '📊 **Grade:**\n\n{grade}',
     },
     'en': {
         'welcome': '👋 Hi! Welcome to the YKI preparation bot!\n\n📝 Use /test to start preparing\n⚙️ Use /menu for settings',
@@ -156,7 +162,13 @@ TRANSLATIONS = {
         'test_not_found': '❌ Test not found\n\nStart over',
         'test_cancelled': '❌ Test cancelled',
         'generating_grade': '🔄 Generating grade...',
-        'grade_title': '📊 **Grade:**\n\n{grade}',
+        'grade_title': '📊 Grade: {grade}',
+        'grade_reason_not_finnish': 'Text is not in Finnish',
+        'grade_reason_off_topic': 'Text is off-topic',
+        'grade_reason_rejected': 'Text was rejected',
+        'grade_reason_grade_extraction_failed': 'Could not extract grade',
+        'grade_reason_error_occurred': 'An error occurred during grading',
+        'grade_zero_message': 'You received a score of 0. Reason: {reason}',
         'generating_feedback': '🔄 Generating feedback...',
         'feedback_title': '💡 **Feedback:**\n\n{feedback}',
         'generating_advice': '🔄 Generating advice...',
@@ -204,7 +216,13 @@ TRANSLATIONS = {
         'test_not_found': '❌ Testiä ei löytynyt\n\nAloita uudelleen',
         'test_cancelled': '❌ Testi peruttu',
         'generating_grade': '🔄 Generoin arvosanaa...',
-        'grade_title': '📊 **Arvosana:**\n\n{grade}',
+        'grade_title': '📊 Arvosana: {grade}',
+        'grade_reason_not_finnish': 'Teksti ei ole suomeksi',
+        'grade_reason_off_topic': 'Teksti ei liity aiheeseen',
+        'grade_reason_rejected': 'Teksti hylättiin',
+        'grade_reason_grade_extraction_failed': 'Arvosanaa ei voitu poimia',
+        'grade_reason_error_occurred': 'Arvioinnissa tapahtui virhe',
+        'grade_zero_message': 'Sait arvosanan 0. Syy: {reason}',
         'generating_feedback': '🔄 Generoin palautetta...',
         'feedback_title': '💡 **Palautetta:**\n\n{feedback}',
         'generating_advice': '🔄 Generoin neuvoja...',
@@ -229,7 +247,7 @@ TRANSLATIONS = {
         'warning_5min': '⚠️ **Varoitus!**\n\n5 minuuttia jäljellä testin loppuun!',
         'warning_1min': '🚨 **Kiireellinen!**\n\n1 minuutti jäljellä testin loppuun!',
         'warning_generic': '⏰ {minutes} minuuttia jäljellä testin loppuun!',
-        'grade_title' : '📊 **Arvosana:**\n\n{grade}',
+        'grade_title' : '📊 **Grade:**\n\n{grade}',
     },
     'kz': {
         'welcome': '👋 Сәлем! YKI дайындық ботына қош келдіңіз!\n\n📝 /test арқылы дайындықты бастаңыз\n⚙️ /menu арқылы параметрлерді өзгертіңіз',
@@ -252,7 +270,13 @@ TRANSLATIONS = {
         'test_not_found': '❌ Сынақ табылмады\n\nҚайта бастаңыз',
         'test_cancelled': '❌ Сынақ тоқтатылды',
         'generating_grade': '🔄 Баға жасауда...',
-        'grade_title': '📊 **Баға:**\n\n{grade}',
+        'grade_title': '📊 Баға: {grade}',
+        'grade_reason_not_finnish': 'Мәтін фин тілінде емес',
+        'grade_reason_off_topic': 'Мәтін тақырыпқа сәйкес емес',
+        'grade_reason_rejected': 'Мәтін қабылданбады',
+        'grade_reason_grade_extraction_failed': 'Бағаны шығару мүмкін емес',
+        'grade_reason_error_occurred': 'Бағалау кезінде қате орын алды',
+        'grade_zero_message': 'Сіз 0 баға алдыңыз. Себебі: {reason}',
         'generating_feedback': '🔄 Кеңес жасауда...',
         'feedback_title': '💡 **Кеңестер:**\n\n{feedback}',
         'generating_advice': '🔄 Кеңес жасауда...',
@@ -277,7 +301,6 @@ TRANSLATIONS = {
         'warning_5min': '⚠️ **Назар аударыңыз!**\n\nСынақтың аяқталуына 5 минут қалды!',
         'warning_1min': '🚨 **Шұғыл!**\n\nСынақтың аяқталуына 1 минут қалды!',
         'warning_generic': '⏰ Сынақтың аяқталуына {minutes} минут қалды!',
-        'grade_title' : '📊 **Баға:**\n\n{grade}',
     }
 }
 
