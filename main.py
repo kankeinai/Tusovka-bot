@@ -62,12 +62,12 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
         await message.answer(get_text('welcome', user['language']))
     elif user and not user['invited']:
         # User is registered but not confirmed
+        await message.answer(get_text('welcome', user['language']))
         await message.answer(get_text('confirm_registration', user['language']))
-        await state.set_state(RegistrationStates.waiting_for_name)
     else:
-        # New user, start registration
-        await message.answer(get_text('invite_code_prompt', 'ru'))
-        await state.set_state(RegistrationStates.waiting_for_invite_code)
+        await message.answer(get_text('welcome', 'ru'))
+        await user_repo.save_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
+        await message.answer(get_text('confirm_registration', user['language']))
 
 @dp.message(Command("confirm"))
 async def command_confirm_handler(message: Message, state: FSMContext) -> None:
@@ -75,11 +75,14 @@ async def command_confirm_handler(message: Message, state: FSMContext) -> None:
     This handler receives messages with `/confirm` command
     """
     user = await user_repo.get_user(message.from_user.id)
+
+    if user and user['invited']:
+        await message.answer(get_text('already_registered', user['language']))
+        return
     
     if user and not user['invited']:
-        await user_repo.update_user(message.from_user.id, confirmed=True)
-        await message.answer(get_text('registration_success', user['language']))
-        await command_menu_handler(message)
+        await state.set_state(RegistrationStates.waiting_for_invite_code)
+        await message.answer(get_text('invite_code_prompt', user['language']))
     else:
         await message.answer(get_text('not_registered', user['language'] if user else 'ru'))
 
@@ -89,6 +92,10 @@ async def handle_invite_code_input(message: Message, state: FSMContext) -> None:
     Handle invite code input during registration
     """
     invite_code = message.text.strip()
+    if invite_code == "/cancel":
+        await state.clear()
+        await message.answer(get_text('registration_cancelled', 'ru'))
+        return
     
     # Check if invite code is valid
     valid_invite = await invite_repo.is_valid_invite(invite_code)
@@ -109,9 +116,10 @@ async def command_menu_handler(message: Message) -> None:
     """
     This handler receives messages with `/menu` command
     """
+
     user = await user_repo.get_user(message.from_user.id)
     
-    if not user or not user['invited']:
+    if not user:
         await message.answer(get_text('not_registered', user['language'] if user else 'ru'))
         return
     
@@ -166,7 +174,18 @@ async def callback_back_handler(callback: CallbackQuery, state: FSMContext) -> N
     """
     This handler receives callback queries with "back" data
     """
-    await command_menu_handler(callback.message)
+    user = await user_repo.get_user(callback.from_user.id)
+    if not user:
+        await callback.message.edit_text(get_text('not_registered', user['language'] if user else 'ru'))
+        return
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text('change_name', user['language']), callback_data="change_name")],
+        [InlineKeyboardButton(text=get_text('change_language', user['language']), callback_data="change_language")],
+        [InlineKeyboardButton(text=get_text('change_level', user['language']), callback_data="change_level")],
+    ])
+    
+    await callback.message.edit_text(get_text('menu_title', user['language']), reply_markup=keyboard)
 
 @dp.callback_query(F.data.startswith("language_"))
 async def callback_language_handler(callback: CallbackQuery, state: FSMContext) -> None:
@@ -195,26 +214,38 @@ async def handle_name_input(message: Message, state: FSMContext) -> None:
     """
     Handle name input during registration or name change
     """
+
+    if message.text == "/cancel":
+        await state.clear()
+        await message.answer(get_text('name_update_cancelled', 'ru'))
+        return
+
     user = await user_repo.get_user(message.from_user.id)
+    if not user:
+        await message.answer(get_text('not_registered', user['language'] if user else 'ru'))
+
     name = message.text.strip()
     
-    if user and user['invited']:
-        # Changing name for existing user
-        await user_repo.update_user(message.from_user.id, name=name)
-        await message.answer(get_text('name_updated', user['language']))
-        await state.clear()
-    else:
-        # New user registration
-        await user_repo.update_user(message.from_user.id, name=name)
-        await message.answer(get_text('confirm_registration', 'ru'))
-        await state.clear()
+    await user_repo.update_user(message.from_user.id, name=name)
+    await message.answer(get_text('name_updated', user['language']))
+    await state.clear()
+   
 
 @dp.message(Command("code"))
 async def command_code_handler(message: Message, state: FSMContext) -> None:
     """
     This handler receives messages with `/code` command
     """
-    await message.answer("Enter number of uses for the invite code:")
+    user = await user_repo.get_user(message.from_user.id)
+    if not user:
+        await message.answer(get_text('not_registered', user['language'] if user else 'ru'))
+        return
+    
+    if user['role'] != 'admin':
+        await message.answer(get_text('not_admin', user['language'] if user else 'ru'))
+        return
+    
+    await message.answer(get_text('num_uses', user['language'] if user else 'ru'))
     await state.set_state(InviteCodeStates.waiting_for_uses)
 
 @dp.message(InviteCodeStates.waiting_for_uses)
@@ -225,7 +256,9 @@ async def handle_uses_input(message: Message, state: FSMContext) -> None:
     try:
         uses = int(message.text.strip())
         invite_code = await invite_repo.create_invite(message.from_user.id, uses)
-        await message.answer(f"Invite code created: {invite_code}")
+        await message.answer(get_text('invite_code_created', 'ru'))
+        await message.answer(invite_code)
+
         await state.clear()
     except ValueError:
         await message.answer("Please enter a valid number.")
@@ -238,7 +271,7 @@ async def command_test_handler(message: Message, state: FSMContext) -> None:
     user = await user_repo.get_user(message.from_user.id)
     
     if not user or not user['invited']:
-        await message.answer(get_text('not_registered', user['language'] if user else 'ru'))
+        await message.answer(get_text('not_invited', user['language'] if user else 'ru'))
         return
     
     if await state.get_state() == TestStates.waiting_for_response:

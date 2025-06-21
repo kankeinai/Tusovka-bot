@@ -1,5 +1,6 @@
 import logging
 from db import Database
+import uuid
 from datetime import datetime
 
 class InviteRepository:
@@ -24,15 +25,16 @@ class InviteRepository:
         except Exception as e:
             logging.error(f"Failed to initialize invites table: {e}")
     
-    async def create_invite(self, code: str, created_by: int, max_uses: int, expires_at: datetime = None) -> bool:
+    async def create_invite(self, created_by: int, max_uses: int, expires_at: datetime = None) -> bool:
         """Create a new invite code"""
         try:
+            code = str(uuid.uuid4())[:8]
             await self.db.execute("""
                 INSERT INTO invites (code, created_by, max_uses, expires_at) 
                 VALUES ($1, $2, $3, $4)
             """, code, created_by, max_uses, expires_at)
             logging.info(f"Created invite code: {code} with {max_uses} uses")
-            return True
+            return code
         except Exception as e:
             logging.error(f"Failed to create invite: {e}")
             return False
